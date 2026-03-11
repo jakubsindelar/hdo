@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+    <title>HDO přehled</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <main class="layout empty-state">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">HDO noční tarif</p>
+          <h1>Zatím bez dat</h1>
+          <p class="description">Databáze je prázdná. Import spusťte z dodaného Excelu.</p>
+        </div>
+      </section>
+
+      <section class="toolbar">
+        <form method="post" action="{{ url_for('import_default') }}">
+          <input type="hidden" name="source" value="{{ import_path }}">
+          <button type="submit">Importovat Excel</button>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>

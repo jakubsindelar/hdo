@@ -1,0 +1,14 @@
+services:
+  hdo:
+    build:
+      context: .
+    container_name: hdo-app
+    ports:
+      - "38417:8000"
+    environment:
+      HDO_DB_PATH: /app/data/hdo.sqlite3
+      HDO_IMPORT_PATH: /import/aktualni-program-hdo-ke-stazeni-3.xls
+    volumes:
+      - ./data:/app/data
+      - /Users/fanatik/Downloads/aktualni-program-hdo-ke-stazeni-3.xls:/import/aktualni-program-hdo-ke-stazeni-3.xls:ro
+    restart: unless-stopped

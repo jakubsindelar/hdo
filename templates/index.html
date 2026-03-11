@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+    <title>HDO přehled</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <main class="layout">
+      <section class="topbar">
+        <div class="brand-block">
+          <h3 class="section-title">HDO noční tarif</h3>
+        </div>
+        <form method="get" class="selector autocomplete-form topbar-search">
+          <label for="command-search">Čitelný kód povelu</label>
+          <div class="search-input-wrap">
+            <input
+              type="text"
+              id="command-search"
+              value="{{ command.numeric_code ~ ((' (' ~ command.readable_code ~ ')') if command.readable_code else '') }}"
+              placeholder="Začněte psát kód nebo číslo povelu"
+              autocomplete="off"
+              aria-autocomplete="list"
+              aria-controls="command-suggestions"
+            >
+            <span class="input-sizer" id="command-search-sizer" aria-hidden="true"></span>
+          </div>
+          <input type="hidden" name="command_id" id="command-id" value="{{ command.id }}">
+          <div class="autocomplete-panel" id="command-suggestions" hidden></div>
+        </form>
+        <div class="theme-toggle-wrap">
+          <button
+            type="button"
+            class="theme-toggle"
+            id="theme-toggle"
+            aria-pressed="false"
+            aria-label="Přepnout tmavý režim"
+            title="Tmavý režim"
+          >
+            <span class="theme-toggle-track">
+              <span class="theme-toggle-thumb">
+                <span class="moon-icon" aria-hidden="true"></span>
+              </span>
+            </span>
+          </button>
+        </div>
+      </section>
+
+      <section class="hero">
+        <div>
+          <h1>{{ command.numeric_code }}{% if command.readable_code %} ({{ command.readable_code }}){% endif %}</h1>
+          <p class="description">{{ command.description }}</p>
+        </div>
+      </section>
+
+      <section class="status-card {{ 'is-on' if current_state.active else 'is-off' }}">
+        <div>
+          <p class="muted">Aktuální stav</p>
+          <h2>{{ current_state.label }}</h2>
+          <p class="next-change">
+            {% if current_state.next_change %}
+              Další změna v {{ current_state.next_change }}
+            {% else %}
+              Zatím bez další změny
+            {% endif %}
+          </p>
+        </div>
+      </section>
+
+      <section class="days">
+        {% for item in upcoming_days %}
+        <article class="day-card">
+          <header>
+            <h3>{{ item.label }}</h3>
+            <p>{{ item.date.strftime('%d.%m.%Y') }}</p>
+          </header>
+          {% if item.intervals %}
+          <ul>
+            {% for segment in item.segments %}
+            <li class="{{ 'segment-on' if segment.active else 'segment-off' }}">
+              <strong>{{ segment.start }} - {{ segment.end }}</strong>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p>Bez intervalu</p>
+          {% endif %}
+        </article>
+        {% endfor %}
+      </section>
+
+      <section class="meta">
+        <div>
+          <span>Platnost od</span>
+          <strong>{{ import_meta.validity_from or '-' }}</strong>
+        </div>
+        <div>
+          <span>Platnost do</span>
+          <strong>{{ import_meta.validity_to or '-' }}</strong>
+        </div>
+        <div>
+          <span>Naposledy importováno</span>
+          <strong>{{ import_meta.imported_at }}</strong>
+        </div>
+      </section>
+
+      <section class="toolbar">
+        <form method="post" action="{{ url_for('import_default') }}" id="import-form">
+          <input type="hidden" name="source" value="{{ import_meta.source_path if import_meta else '' }}">
+          <button type="submit" id="import-button">Znovu importovat zdrojový Excel</button>
+        </form>
+      </section>
+    </main>
+    <script>
+      const storageKey = "hdo-theme";
+      const themeToggle = document.getElementById("theme-toggle");
+      const root = document.documentElement;
+
+      function applyTheme(theme) {
+        root.dataset.theme = theme;
+        const isDark = theme === "dark";
+        themeToggle.setAttribute("aria-pressed", String(isDark));
+      }
+
+      const storedTheme = localStorage.getItem(storageKey);
+      if (storedTheme === "dark" || storedTheme === "light") {
+        applyTheme(storedTheme);
+      } else {
+        applyTheme("light");
+      }
+
+      themeToggle.addEventListener("click", () => {
+        const nextTheme = root.dataset.theme === "dark" ? "light" : "dark";
+        localStorage.setItem(storageKey, nextTheme);
+        applyTheme(nextTheme);
+      });
+
+      const importForm = document.getElementById("import-form");
+      if (importForm) {
+        importForm.addEventListener("submit", (event) => {
+          const confirmed = window.confirm("Opravdu chcete aktualizovat databázi časů HDO?");
+          if (!confirmed) {
+            event.preventDefault();
+          }
+        });
+      }
+
+      const searchInput = document.getElementById("command-search");
+      const searchSizer = document.getElementById("command-search-sizer");
+      const hiddenIdInput = document.getElementById("command-id");
+      const suggestions = document.getElementById("command-suggestions");
+      const options = [
+        {% for item in commands %}
+        {
+          id: {{ item.id }},
+          label: {{ (item.numeric_code ~ ((' (' ~ item.readable_code ~ ')') if item.readable_code else ''))|tojson }}
+        },
+        {% endfor %}
+      ];
+
+      function syncSearchWidth() {
+        const sample = searchInput.value || searchInput.placeholder || "";
+        searchSizer.textContent = sample;
+        const formWidth = searchInput.form.getBoundingClientRect().width;
+        const maxWidth = Math.min(Math.max(formWidth - 150, 170), 460);
+        const nextWidth = Math.min(Math.max(searchSizer.offsetWidth + 34, 170), maxWidth);
+        searchInput.style.width = `${nextWidth}px`;
+        suggestions.style.width = `${nextWidth}px`;
+      }
+
+      function renderSuggestions(items) {
+        suggestions.innerHTML = "";
+        if (!items.length) {
+          suggestions.hidden = true;
+          return;
+        }
+
+        items.slice(0, 12).forEach((item) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "autocomplete-option";
+          button.textContent = item.label;
+          button.addEventListener("click", () => {
+            searchInput.value = item.label;
+            hiddenIdInput.value = item.id;
+            suggestions.hidden = true;
+            searchInput.form.requestSubmit();
+          });
+          suggestions.appendChild(button);
+        });
+
+        suggestions.hidden = false;
+      }
+
+      function updateSuggestions() {
+        syncSearchWidth();
+        const term = searchInput.value.trim().toLowerCase();
+        if (!term) {
+          renderSuggestions(options.slice(0, 12));
+          return;
+        }
+
+        const filtered = options.filter((item) => item.label.toLowerCase().includes(term));
+        renderSuggestions(filtered);
+      }
+
+      function submitExactMatch() {
+        const match = options.find((item) => item.label === searchInput.value);
+        if (!match) {
+          return false;
+        }
+        hiddenIdInput.value = match.id;
+        suggestions.hidden = true;
+        searchInput.form.requestSubmit();
+        return true;
+      }
+
+      searchInput.addEventListener("focus", updateSuggestions);
+      searchInput.addEventListener("input", updateSuggestions);
+      searchInput.addEventListener("change", submitExactMatch);
+      window.addEventListener("resize", syncSearchWidth);
+      searchInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          submitExactMatch();
+        }
+        if (event.key === "Escape") {
+          suggestions.hidden = true;
+        }
+      });
+
+      document.addEventListener("click", (event) => {
+        if (!event.target.closest(".autocomplete-form")) {
+          suggestions.hidden = true;
+        }
+      });
+
+      syncSearchWidth();
+    </script>
+  </body>
+</html>
