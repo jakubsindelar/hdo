@@ -2,9 +2,9 @@ services:
   hdo:
     build:
       context: .
-    container_name: hdo-app
+    container_name: hdo-app-dev
     ports:
-      - "${HDO_HOST_PORT_PROD:-38417}:8000"
+      - "${HDO_HOST_PORT_DEV:-38416}:8000"
     environment:
       HDO_DB_PATH: /app/data/hdo.sqlite3
       HDO_IMPORT_PATH: /import/aktualni-program-hdo-ke-stazeni.xls

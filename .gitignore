@@ -1,3 +1,5 @@
 __pycache__/
 *.pyc
 data/
+.env
+aktualni-program-hdo-ke-stazeni.xls

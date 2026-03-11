@@ -31,6 +31,15 @@ python3 app.py import --source /cesta/k/souboru.xls
 
 Připravené spuštění v Dockeru:
 
+Porty nastavíte v `.env`:
+
+```dotenv
+HDO_HOST_PORT_PROD=38417
+HDO_HOST_PORT_DEV=38416
+```
+
+Produkce:
+
 ```bash
 docker compose up --build -d
 ```
@@ -41,10 +50,28 @@ Aplikace bude dostupná na:
 http://127.0.0.1:38417
 ```
 
+Kontejner běží na interním portu `8000`.
+
+Development (host port o 1 menší):
+
+```bash
+docker compose -f docker-compose.dev.yml up --build -d
+```
+
+Aplikace bude dostupná na:
+
+```text
+http://127.0.0.1:38416
+```
+
+Kontejner běží i v developmentu na interním portu `8000`.
+
 Compose mapuje:
 
 - SQLite data do `./data`
 - zdrojový Excel z `/Users/fanatik/Downloads/aktualni-program-hdo-ke-stazeni-3.xls`
+
+K dispozici je i šablona `.env.example`.
 
 Ochrana proti indexaci:
 
