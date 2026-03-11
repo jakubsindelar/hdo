@@ -149,6 +149,7 @@
 
       const searchInput = document.getElementById("command-search");
       const searchSizer = document.getElementById("command-search-sizer");
+      const searchWrap = document.querySelector(".search-input-wrap");
       const hiddenIdInput = document.getElementById("command-id");
       const suggestions = document.getElementById("command-suggestions");
       const options = [
@@ -163,8 +164,11 @@
       function syncSearchWidth() {
         const sample = searchInput.value || searchInput.placeholder || "";
         searchSizer.textContent = sample;
-        const formWidth = searchInput.form.getBoundingClientRect().width;
-        const maxWidth = Math.min(Math.max(formWidth - 150, 170), 460);
+        const wrapWidth = searchWrap.getBoundingClientRect().width || 0;
+        const formWidth = searchInput.form.getBoundingClientRect().width || 0;
+        const viewportMax = window.innerWidth <= 820 ? 220 : 460;
+        const containerMax = wrapWidth > 0 ? wrapWidth : Math.max(formWidth - 150, 170);
+        const maxWidth = Math.min(Math.max(containerMax, 170), viewportMax);
         const nextWidth = Math.min(Math.max(searchSizer.offsetWidth + 34, 170), maxWidth);
         searchInput.style.width = `${nextWidth}px`;
         suggestions.style.width = `${nextWidth}px`;

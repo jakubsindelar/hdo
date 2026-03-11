@@ -260,6 +260,7 @@ input {
   position: relative;
   width: fit-content;
   min-width: 0;
+  max-width: 100%;
 }
 
 .search-input-wrap input {
@@ -448,23 +449,27 @@ button {
       "brand brand"
       "search toggle";
     align-items: end;
+    column-gap: 12px;
   }
 
   .autocomplete-form {
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 8px;
   }
 
   .autocomplete-form label {
-    white-space: nowrap;
+    white-space: normal;
   }
 
   .autocomplete-panel {
-    left: max-content;
+    left: 0;
   }
 
   .search-input-wrap input {
-    max-width: 280px;
+    width: 100% !important;
+    min-width: 0;
+    max-width: min(220px, 100%);
   }
 
   .theme-toggle-wrap {
