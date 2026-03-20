@@ -85,6 +85,38 @@ class Interval:
     end: str
 
 
+class PrefixMiddleware:
+    def __init__(self, app, prefix: str):
+        self.app = app
+        self.prefix = normalize_prefix(prefix)
+
+    def __call__(self, environ, start_response):
+        if not self.prefix:
+            return self.app(environ, start_response)
+        if environ.get("SCRIPT_NAME"):
+            return self.app(environ, start_response)
+
+        path_info = environ.get("PATH_INFO", "") or ""
+        if path_info.startswith(self.prefix):
+            environ["SCRIPT_NAME"] = self.prefix
+            stripped = path_info[len(self.prefix) :]
+            environ["PATH_INFO"] = stripped if stripped else "/"
+        else:
+            # Proxy can strip prefix before forwarding. Keep routes matching
+            # and still generate prefixed URLs via url_for.
+            environ["SCRIPT_NAME"] = self.prefix
+        return self.app(environ, start_response)
+
+
+def normalize_prefix(prefix: str) -> str:
+    normalized = (prefix or "").strip()
+    if not normalized:
+        return ""
+    if not normalized.startswith("/"):
+        normalized = f"/{normalized}"
+    return normalized.rstrip("/")
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config["DATABASE"] = str(DB_PATH)
@@ -92,7 +124,10 @@ def create_app() -> Flask:
     app.config["AUTH_ENABLED"] = os.environ.get("HDO_AUTH_ENABLED", "1") != "0"
     app.config["AUTH_SESSION_KEY"] = "auth_user_id"
     app.config["EXTERNAL_BASE_URL"] = os.environ.get("HDO_EXTERNAL_BASE_URL", "").rstrip("/")
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+    app.config["URL_PREFIX"] = normalize_prefix(os.environ.get("HDO_URL_PREFIX", ""))
+    app.config["APPLICATION_ROOT"] = app.config["URL_PREFIX"] or "/"
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
+    app.wsgi_app = PrefixMiddleware(app.wsgi_app, app.config["URL_PREFIX"])
     oauth = OAuth(app) if OAuth else None
     if oauth is None:
         app.config["AUTH_ENABLED"] = False

@@ -89,6 +89,7 @@ Základní proměnné:
 HDO_SECRET_KEY=nahodne-dlouhe-tajne-heslo
 HDO_AUTH_ENABLED=1
 HDO_EXTERNAL_BASE_URL=https://hdo.example.com
+HDO_URL_PREFIX=
 ```
 
 Google:
@@ -102,6 +103,18 @@ Do Google OAuth klienta dej callback:
 
 ```text
 https://hdo.example.com/auth/google/callback
+```
+
+Pokud běží app pod prefixem (např. `https://hdo.example.com/dev/`), nastav:
+
+```dotenv
+HDO_URL_PREFIX=/dev
+```
+
+a callback bude:
+
+```text
+https://hdo.example.com/dev/auth/google/callback
 ```
 
 Apple:
