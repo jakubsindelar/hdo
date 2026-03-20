@@ -224,6 +224,11 @@ def create_app() -> Flask:
             providers=[{"key": key, **provider} for key, provider in configured_providers.items()],
         )
 
+    @app.get("/setting")
+    @admin_required(app)
+    def settings_alias():
+        return redirect(url_for("settings"))
+
     @app.post("/import")
     @admin_required(app)
     def import_default():
