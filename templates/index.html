@@ -10,42 +10,51 @@
   <body>
     <main class="layout">
       <section class="topbar">
-        <div class="brand-block">
-          <h3 class="section-title">HDO noční tarif</h3>
+        <div class="topbar-heading">
+          <div class="brand-block">
+            <h3 class="section-title">HDO noční tarif</h3>
+          </div>
+          {% if auth_enabled and current_user %}
+            <div class="user-chip">
+              <span>{{ current_user.email }}</span>
+              <form method="post" action="{{ url_for('logout') }}">
+                <button type="submit" class="chip-button">Odhlásit</button>
+              </form>
+            </div>
+          {% endif %}
         </div>
         <form method="get" class="selector autocomplete-form topbar-search">
-          <label for="command-search">Čitelný kód povelu</label>
-          <div class="search-input-wrap">
-            <input
-              type="text"
-              id="command-search"
-              value="{{ command.numeric_code ~ ((' (' ~ command.readable_code ~ ')') if command.readable_code else '') }}"
-              placeholder="Začněte psát kód nebo číslo povelu"
-              autocomplete="off"
-              aria-autocomplete="list"
-              aria-controls="command-suggestions"
-            >
-            <span class="input-sizer" id="command-search-sizer" aria-hidden="true"></span>
+          <label for="command-search" class="sr-only">Číselný kód povelu</label>
+          <div class="search-controls">
+            <div class="search-input-wrap">
+              <input
+                type="text"
+                id="command-search"
+                value="{{ command.numeric_code ~ ((' (' ~ command.readable_code ~ ')') if command.readable_code else '') if request.args.get('command_id') else '' }}"
+                placeholder="Číselný kód povelu"
+                autocomplete="off"
+                aria-autocomplete="list"
+                aria-controls="command-suggestions"
+                aria-label="Číselný kód povelu"
+              >
+              <span class="input-sizer" id="command-search-sizer" aria-hidden="true"></span>
+            </div>
+            {% if (not auth_enabled) or (current_user and current_user.is_admin) %}
+              <a
+                href="{{ url_for('settings') }}"
+                class="settings-link"
+                aria-label="Otevřít nastavení"
+                title="Nastavení"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M19.14 12.94a7.3 7.3 0 0 0 .05-.94 7.3 7.3 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.65l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.14 7.14 0 0 0-1.62-.94L14.4 2.8a.5.5 0 0 0-.49-.4h-3.82a.5.5 0 0 0-.49.4L9.24 5.3c-.58.23-1.12.54-1.62.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.82a.5.5 0 0 0 .12.65l2.03 1.58a7.3 7.3 0 0 0-.05.94 7.3 7.3 0 0 0 .05.94L2.83 14.5a.5.5 0 0 0-.12.65l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.4 1.04.71 1.62.94l.36 2.5a.5.5 0 0 0 .49.4h3.82a.5.5 0 0 0 .49-.4l.36-2.5c.58-.23 1.12-.54 1.62-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.65zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/>
+                </svg>
+              </a>
+            {% endif %}
           </div>
           <input type="hidden" name="command_id" id="command-id" value="{{ command.id }}">
           <div class="autocomplete-panel" id="command-suggestions" hidden></div>
         </form>
-        <div class="theme-toggle-wrap">
-          <button
-            type="button"
-            class="theme-toggle"
-            id="theme-toggle"
-            aria-pressed="false"
-            aria-label="Přepnout tmavý režim"
-            title="Tmavý režim"
-          >
-            <span class="theme-toggle-track">
-              <span class="theme-toggle-thumb">
-                <span class="moon-icon" aria-hidden="true"></span>
-              </span>
-            </span>
-          </button>
-        </div>
       </section>
 
       <section class="hero">
@@ -105,47 +114,26 @@
           <strong>{{ import_meta.imported_at }}</strong>
         </div>
       </section>
-
-      <section class="toolbar">
-        <form method="post" action="{{ url_for('import_default') }}" id="import-form">
-          <input type="hidden" name="source" value="{{ import_meta.source_path if import_meta else '' }}">
-          <button type="submit" id="import-button">Znovu importovat zdrojový Excel</button>
-        </form>
-      </section>
     </main>
     <script>
-      const storageKey = "hdo-theme";
-      const themeToggle = document.getElementById("theme-toggle");
+      const storageKey = "hdo-theme-preference";
       const root = document.documentElement;
+      const validThemes = new Set(["light", "dark"]);
 
-      function applyTheme(theme) {
-        root.dataset.theme = theme;
-        const isDark = theme === "dark";
-        themeToggle.setAttribute("aria-pressed", String(isDark));
+      function parseTheme(value) {
+        if (!value) return null;
+        const normalized = String(value).toLowerCase();
+        return validThemes.has(normalized) ? normalized : null;
       }
 
-      const storedTheme = localStorage.getItem(storageKey);
-      if (storedTheme === "dark" || storedTheme === "light") {
-        applyTheme(storedTheme);
-      } else {
-        applyTheme("light");
+      function renderTheme(preference) {
+        root.dataset.theme = preference;
       }
 
-      themeToggle.addEventListener("click", () => {
-        const nextTheme = root.dataset.theme === "dark" ? "light" : "dark";
-        localStorage.setItem(storageKey, nextTheme);
-        applyTheme(nextTheme);
-      });
-
-      const importForm = document.getElementById("import-form");
-      if (importForm) {
-        importForm.addEventListener("submit", (event) => {
-          const confirmed = window.confirm("Opravdu chcete aktualizovat databázi časů HDO?");
-          if (!confirmed) {
-            event.preventDefault();
-          }
-        });
-      }
+      const urlTheme = parseTheme(new URLSearchParams(window.location.search).get("theme"));
+      const storedTheme = parseTheme(localStorage.getItem(storageKey)) || parseTheme(localStorage.getItem("hdo-theme"));
+      let themePreference = urlTheme || storedTheme || "light";
+      renderTheme(themePreference);
 
       const searchInput = document.getElementById("command-search");
       const searchSizer = document.getElementById("command-search-sizer");
@@ -164,14 +152,24 @@
       function syncSearchWidth() {
         const sample = searchInput.value || searchInput.placeholder || "";
         searchSizer.textContent = sample;
+        const isNarrow = window.innerWidth <= 820;
+        if (isNarrow) {
+          searchInput.style.width = "100%";
+          suggestions.style.width = "100%";
+          suggestions.style.maxWidth = "100%";
+          return;
+        }
+
         const wrapWidth = searchWrap.getBoundingClientRect().width || 0;
-        const formWidth = searchInput.form.getBoundingClientRect().width || 0;
-        const viewportMax = window.innerWidth <= 820 ? 220 : 460;
-        const containerMax = wrapWidth > 0 ? wrapWidth : Math.max(formWidth - 150, 170);
-        const maxWidth = Math.min(Math.max(containerMax, 170), viewportMax);
+        const formRect = searchInput.form.getBoundingClientRect();
+        const viewportWidth = window.visualViewport?.width || window.innerWidth;
+        const viewportMax = Math.max(170, viewportWidth - formRect.left - 24);
+        const maxWidth = Math.max(170, Math.min(wrapWidth || formRect.width, formRect.width, viewportMax, 460));
         const nextWidth = Math.min(Math.max(searchSizer.offsetWidth + 34, 170), maxWidth);
-        searchInput.style.width = `${nextWidth}px`;
-        suggestions.style.width = `${nextWidth}px`;
+
+        searchInput.style.width = `${Math.floor(nextWidth)}px`;
+        suggestions.style.width = `${Math.floor(nextWidth)}px`;
+        suggestions.style.maxWidth = `${Math.floor(maxWidth)}px`;
       }
 
       function renderSuggestions(items) {

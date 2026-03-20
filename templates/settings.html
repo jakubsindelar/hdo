@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+    <title>Nastavení | HDO přehled</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <main class="layout settings-layout">
+      <section class="topbar settings-topbar">
+        <div class="topbar-heading">
+          <div class="brand-block">
+            <h3 class="section-title">Nastavení</h3>
+          </div>
+          {% if auth_enabled and current_user %}
+            <div class="user-chip">
+              <span>{{ current_user.email }}</span>
+              <form method="post" action="{{ url_for('logout') }}">
+                <button type="submit" class="chip-button">Odhlásit</button>
+              </form>
+            </div>
+          {% endif %}
+        </div>
+        <div class="settings-topbar-actions">
+          <a href="{{ url_for('index') }}" class="settings-back-link">Zpět na přehled</a>
+        </div>
+      </section>
+
+      <section class="hero">
+        <div>
+          <h1>Nastavení aplikace</h1>
+          <p class="description">Správa importu, vzhledu a výchozího kódu povelu.</p>
+        </div>
+      </section>
+
+      <section class="meta">
+        <div>
+          <span>Platnost od</span>
+          <strong>{{ import_meta.validity_from if import_meta else '-' }}</strong>
+        </div>
+        <div>
+          <span>Platnost do</span>
+          <strong>{{ import_meta.validity_to if import_meta else '-' }}</strong>
+        </div>
+        <div>
+          <span>Naposledy importováno</span>
+          <strong>{{ import_meta.imported_at if import_meta else '-' }}</strong>
+        </div>
+      </section>
+
+      <section class="toolbar settings-panel">
+        <h2 class="settings-title">Výchozí kód povelu</h2>
+        {% if commands %}
+          <form method="post" action="{{ url_for('update_default_code') }}" class="settings-form">
+            <label for="default-command-id">Kód, který se zobrazí po otevření aplikace</label>
+            <select id="default-command-id" name="command_id" required>
+              {% for item in commands %}
+                {% set item_label = item.numeric_code ~ ((' (' ~ item.readable_code ~ ')') if item.readable_code else '') %}
+                <option value="{{ item.id }}" {% if item.numeric_code == default_code %}selected{% endif %}>{{ item_label }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit">Uložit výchozí kód</button>
+          </form>
+        {% else %}
+          <p class="description">Nejdřív je potřeba naimportovat data z Excelu.</p>
+        {% endif %}
+      </section>
+
+      <section class="toolbar settings-panel">
+        <h2 class="settings-title">Import dat</h2>
+        <form method="post" action="{{ url_for('import_default') }}" id="import-form" class="settings-form">
+          <input type="hidden" name="source" value="{{ import_meta.source_path if import_meta else import_path }}">
+          <input type="hidden" name="next" value="settings">
+          <button type="submit" id="import-button">Znovu importovat zdrojový Excel</button>
+        </form>
+      </section>
+
+      <section class="toolbar settings-panel">
+        <h2 class="settings-title">Vzhled</h2>
+        <div class="theme-toggle-wrap">
+          <button
+            type="button"
+            class="theme-toggle"
+            id="theme-toggle"
+            aria-pressed="false"
+            aria-label="Přepnout tmavý režim"
+            title="Tmavý režim"
+          >
+            <span class="theme-toggle-track">
+              <span class="theme-toggle-thumb">
+                <span class="moon-icon" aria-hidden="true"></span>
+              </span>
+            </span>
+          </button>
+        </div>
+      </section>
+
+      <section class="toolbar settings-panel">
+        <h2 class="settings-title">Single Sign-On</h2>
+        {% if not auth_library_available %}
+          <p class="description">Pro SSO je potřeba doinstalovat balíček `Authlib`.</p>
+        {% elif providers %}
+          <p class="description">Aktivní provideri: {{ providers | map(attribute='display_name') | join(', ') }}</p>
+        {% else %}
+          <p class="description">Není nakonfigurován žádný provider. Nastav `HDO_OAUTH_GOOGLE_CLIENT_ID`/`SECRET` a případně `HDO_OAUTH_APPLE_CLIENT_ID`/`SECRET`.</p>
+        {% endif %}
+      </section>
+
+      <section class="toolbar settings-panel">
+        <h2 class="settings-title">Uživatelé</h2>
+        <div class="users-table-wrap">
+          <table class="users-table">
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Jméno</th>
+                <th>Role</th>
+                <th>Stav</th>
+                <th>Akce</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for user in users %}
+                <tr>
+                  <td>{{ user.email }}</td>
+                  <td>{{ user.name or '-' }}</td>
+                  <td>{{ 'Admin' if user.is_admin else 'Uživatel' }}</td>
+                  <td>{{ 'Aktivní' if user.is_active else 'Neaktivní' }}</td>
+                  <td class="users-actions">
+                    {% if current_user and current_user.id == user.id %}
+                      <span>Aktuální účet</span>
+                    {% else %}
+                      <form method="post" action="{{ url_for('toggle_user_admin', user_id=user.id) }}">
+                        <button type="submit">{{ 'Odebrat admina' if user.is_admin else 'Nastavit admina' }}</button>
+                      </form>
+                      <form method="post" action="{{ url_for('toggle_user_active', user_id=user.id) }}">
+                        <button type="submit">{{ 'Deaktivovat' if user.is_active else 'Aktivovat' }}</button>
+                      </form>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <script>
+      const storageKey = "hdo-theme-preference";
+      const themeToggle = document.getElementById("theme-toggle");
+      const root = document.documentElement;
+      const validThemes = new Set(["light", "dark"]);
+
+      function parseTheme(value) {
+        if (!value) return null;
+        const normalized = String(value).toLowerCase();
+        return validThemes.has(normalized) ? normalized : null;
+      }
+
+      function renderTheme(preference) {
+        root.dataset.theme = preference;
+        const isDark = preference === "dark";
+        themeToggle.setAttribute("aria-pressed", String(isDark));
+        themeToggle.dataset.mode = preference;
+        const modeLabel = preference === "dark" ? "Tmavý" : "Světlý";
+        themeToggle.title = `Režim: ${modeLabel}`;
+        themeToggle.setAttribute("aria-label", `Režim vzhledu: ${modeLabel}`);
+      }
+
+      const urlTheme = parseTheme(new URLSearchParams(window.location.search).get("theme"));
+      const storedTheme = parseTheme(localStorage.getItem(storageKey)) || parseTheme(localStorage.getItem("hdo-theme"));
+      let themePreference = urlTheme || storedTheme || "light";
+      const isUrlOverride = Boolean(urlTheme);
+      renderTheme(themePreference);
+
+      themeToggle.addEventListener("click", () => {
+        themePreference = themePreference === "dark" ? "light" : "dark";
+        renderTheme(themePreference);
+        if (!isUrlOverride) {
+          localStorage.setItem(storageKey, themePreference);
+        }
+      });
+
+      const importForm = document.getElementById("import-form");
+      importForm.addEventListener("submit", (event) => {
+        const confirmed = window.confirm("Opravdu chcete aktualizovat databázi časů HDO?");
+        if (!confirmed) {
+          event.preventDefault();
+        }
+      });
+    </script>
+  </body>
+</html>

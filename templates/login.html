@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+    <title>Přihlášení | HDO přehled</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <main class="layout login-layout">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">HDO noční tarif</p>
+          <h1>Přihlášení</h1>
+          <p class="description">Pokračujte přes firemní SSO účet.</p>
+        </div>
+      </section>
+
+      <section class="toolbar settings-panel">
+        {% if providers %}
+          <div class="provider-list">
+            {% for provider in providers %}
+              <a href="{{ url_for('auth_start', provider=provider.key) }}" class="provider-button">
+                <span class="provider-icon">{{ provider.icon }}</span>
+                <span>Přihlásit přes {{ provider.display_name }}</span>
+              </a>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="description">SSO provider zatím není nakonfigurován.</p>
+        {% endif %}
+      </section>
+    </main>
+  </body>
+</html>

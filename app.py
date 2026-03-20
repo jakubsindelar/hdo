@@ -5,14 +5,36 @@ import os
 import sqlite3
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from functools import wraps
 from pathlib import Path
 from typing import Iterable
 
+try:
+    from authlib.integrations.flask_client import OAuth
+except ModuleNotFoundError:  # pragma: no cover - fallback for environments without Authlib
+    OAuth = None
 import xlrd
-from flask import Flask, g, redirect, render_template, request, url_for
+from flask import Flask, g, redirect, render_template, request, session, url_for
 
 
 BASE_DIR = Path(__file__).resolve().parent
+
+
+def load_env_file(path: Path) -> None:
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+load_env_file(BASE_DIR / ".env")
 DB_PATH = Path(os.environ.get("HDO_DB_PATH", str(BASE_DIR / "data" / "hdo.sqlite3")))
 DEFAULT_IMPORT_PATH = Path(
     os.environ.get(
@@ -40,6 +62,20 @@ DAY_NAME_TO_KEY = {
     "neděle": 6,
     "svátek": 7,
 }
+OAUTH_PROVIDER_CONFIG = {
+    "google": {
+        "display_name": "Google",
+        "metadata_url": "https://accounts.google.com/.well-known/openid-configuration",
+        "scope": "openid email profile",
+        "icon": "G",
+    },
+    "apple": {
+        "display_name": "Apple",
+        "metadata_url": "https://appleid.apple.com/.well-known/openid-configuration",
+        "scope": "openid email name",
+        "icon": "A",
+    },
+}
 
 
 @dataclass
@@ -51,6 +87,29 @@ class Interval:
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config["DATABASE"] = str(DB_PATH)
+    app.config["SECRET_KEY"] = os.environ.get("HDO_SECRET_KEY", "dev-secret-change-me")
+    app.config["AUTH_ENABLED"] = os.environ.get("HDO_AUTH_ENABLED", "1") != "0"
+    app.config["AUTH_SESSION_KEY"] = "auth_user_id"
+    oauth = OAuth(app) if OAuth else None
+    if oauth is None:
+        app.config["AUTH_ENABLED"] = False
+
+    configured_providers: dict[str, dict[str, str]] = {}
+    for provider_key, provider in OAUTH_PROVIDER_CONFIG.items():
+        if oauth is None:
+            continue
+        client_id = os.environ.get(f"HDO_OAUTH_{provider_key.upper()}_CLIENT_ID", "").strip()
+        client_secret = os.environ.get(f"HDO_OAUTH_{provider_key.upper()}_CLIENT_SECRET", "").strip()
+        if not client_id or not client_secret:
+            continue
+        oauth.register(
+            name=provider_key,
+            client_id=client_id,
+            client_secret=client_secret,
+            server_metadata_url=provider["metadata_url"],
+            client_kwargs={"scope": provider["scope"]},
+        )
+        configured_providers[provider_key] = provider
 
     @app.after_request
     def add_noindex_headers(response):
@@ -58,14 +117,76 @@ def create_app() -> Flask:
         response.headers["Referrer-Policy"] = "same-origin"
         return response
 
+    @app.before_request
+    def load_current_user() -> None:
+        g.current_user = None
+        if not app.config["AUTH_ENABLED"]:
+            return
+        user_id = session.get(app.config["AUTH_SESSION_KEY"])
+        if not user_id:
+            return
+        g.current_user = get_user_by_id(get_db(), int(user_id))
+
+    @app.context_processor
+    def inject_template_context() -> dict[str, object]:
+        return {
+            "auth_enabled": app.config["AUTH_ENABLED"],
+            "auth_library_available": oauth is not None,
+            "current_user": getattr(g, "current_user", None),
+        }
+
+    @app.get("/login")
+    def login():
+        if not app.config["AUTH_ENABLED"]:
+            return redirect(url_for("index"))
+        if g.current_user:
+            return redirect(url_for("index"))
+        providers = [{"key": key, **provider} for key, provider in configured_providers.items()]
+        return render_template("login.html", providers=providers)
+
+    @app.get("/auth/<provider>/start")
+    def auth_start(provider: str):
+        if not app.config["AUTH_ENABLED"]:
+            return redirect(url_for("index"))
+        if provider not in configured_providers:
+            return redirect(url_for("login"))
+        redirect_uri = url_for("auth_callback", provider=provider, _external=True)
+        return oauth.create_client(provider).authorize_redirect(redirect_uri)
+
+    @app.get("/auth/<provider>/callback")
+    def auth_callback(provider: str):
+        if not app.config["AUTH_ENABLED"]:
+            return redirect(url_for("index"))
+        if provider not in configured_providers:
+            return redirect(url_for("login"))
+        client = oauth.create_client(provider)
+        token = client.authorize_access_token()
+        user_info = token.get("userinfo")
+        if not user_info:
+            user_info = client.userinfo(token=token)
+        user = upsert_user_from_oauth(get_db(), provider, user_info)
+        if not user or not int(user["is_active"]):
+            session.pop(app.config["AUTH_SESSION_KEY"], None)
+            return redirect(url_for("login"))
+        session[app.config["AUTH_SESSION_KEY"]] = int(user["id"])
+        return redirect(url_for("index"))
+
+    @app.post("/logout")
+    def logout():
+        session.pop(app.config["AUTH_SESSION_KEY"], None)
+        return redirect(url_for("login") if app.config["AUTH_ENABLED"] else url_for("index"))
+
     @app.route("/")
+    @login_required(app)
     def index():
         db = get_db()
         commands = list_commands(db)
         if not commands:
             return render_template("empty.html", import_path=str(DEFAULT_IMPORT_PATH))
 
-        selected_id = request.args.get("command_id", type=int) or commands[0]["id"]
+        selected_id = request.args.get("command_id", type=int)
+        if selected_id is None:
+            selected_id = resolve_default_command_id(db, commands)
         command = get_command_by_id(db, selected_id) or commands[0]
         today = datetime.now().date()
         current_state = build_current_state(db, command["id"], today, datetime.now())
@@ -81,11 +202,68 @@ def create_app() -> Flask:
             today=today,
         )
 
+    @app.get("/settings")
+    @admin_required(app)
+    def settings():
+        db = get_db()
+        commands = list_commands(db)
+        import_meta = get_latest_import(db)
+        default_code = get_setting(db, "default_numeric_code") or ""
+        users = list_users(db)
+        return render_template(
+            "settings.html",
+            commands=commands,
+            import_meta=import_meta,
+            default_code=default_code,
+            import_path=str(DEFAULT_IMPORT_PATH),
+            users=users,
+            providers=[{"key": key, **provider} for key, provider in configured_providers.items()],
+        )
+
     @app.post("/import")
+    @admin_required(app)
     def import_default():
         source = request.form.get("source") or str(DEFAULT_IMPORT_PATH)
         import_workbook(Path(source), get_db())
+        next_endpoint = request.form.get("next")
+        if next_endpoint in {"index", "settings"}:
+            return redirect(url_for(next_endpoint))
         return redirect(url_for("index"))
+
+    @app.post("/settings/default-code")
+    @admin_required(app)
+    def update_default_code():
+        command_id = request.form.get("command_id", type=int)
+        db = get_db()
+        command = get_command_by_id(db, command_id) if command_id else None
+        default_code = command["numeric_code"] if command else ""
+        set_setting(db, "default_numeric_code", default_code)
+        return redirect(url_for("settings"))
+
+    @app.post("/settings/users/<int:user_id>/toggle-active")
+    @admin_required(app)
+    def toggle_user_active(user_id: int):
+        db = get_db()
+        current_user = g.current_user
+        if current_user and int(current_user["id"]) == user_id:
+            return redirect(url_for("settings"))
+        user = get_user_by_id(db, user_id)
+        if user:
+            update_user_active(db, user_id, not bool(user["is_active"]))
+        return redirect(url_for("settings"))
+
+    @app.post("/settings/users/<int:user_id>/toggle-admin")
+    @admin_required(app)
+    def toggle_user_admin(user_id: int):
+        db = get_db()
+        current_user = g.current_user
+        user = get_user_by_id(db, user_id)
+        if not user:
+            return redirect(url_for("settings"))
+        if current_user and int(current_user["id"]) == user_id:
+            return redirect(url_for("settings"))
+        update_user_admin(db, user_id, not bool(user["is_admin"]))
+        return redirect(url_for("settings"))
 
     @app.get("/robots.txt")
     def robots_txt():
@@ -156,8 +334,155 @@ def init_db() -> None:
                 start_time TEXT NOT NULL,
                 end_time TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL UNIQUE,
+                name TEXT,
+                is_admin INTEGER NOT NULL DEFAULT 0,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                last_login_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS oauth_accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                provider TEXT NOT NULL,
+                provider_sub TEXT NOT NULL,
+                email TEXT,
+                UNIQUE(provider, provider_sub)
+            );
             """
         )
+
+
+def login_required(app: Flask):
+    def decorator(func):
+        @wraps(func)
+        def wrapped(*args, **kwargs):
+            if not app.config["AUTH_ENABLED"]:
+                return func(*args, **kwargs)
+            user = getattr(g, "current_user", None)
+            if not user or not bool(user["is_active"]):
+                session.pop(app.config["AUTH_SESSION_KEY"], None)
+                return redirect(url_for("login"))
+            return func(*args, **kwargs)
+
+        return wrapped
+
+    return decorator
+
+
+def admin_required(app: Flask):
+    def decorator(func):
+        @wraps(func)
+        def wrapped(*args, **kwargs):
+            if not app.config["AUTH_ENABLED"]:
+                return func(*args, **kwargs)
+            user = getattr(g, "current_user", None)
+            if not user or not bool(user["is_active"]):
+                session.pop(app.config["AUTH_SESSION_KEY"], None)
+                return redirect(url_for("login"))
+            if not bool(user["is_admin"]):
+                return redirect(url_for("index"))
+            return func(*args, **kwargs)
+
+        return wrapped
+
+    return decorator
+
+
+def get_user_by_id(db: sqlite3.Connection, user_id: int) -> sqlite3.Row | None:
+    return db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+
+
+def list_users(db: sqlite3.Connection) -> list[sqlite3.Row]:
+    return db.execute("SELECT * FROM users ORDER BY email").fetchall()
+
+
+def update_user_active(db: sqlite3.Connection, user_id: int, is_active: bool) -> None:
+    with db:
+        db.execute("UPDATE users SET is_active = ? WHERE id = ?", (1 if is_active else 0, user_id))
+
+
+def update_user_admin(db: sqlite3.Connection, user_id: int, is_admin: bool) -> None:
+    with db:
+        db.execute("UPDATE users SET is_admin = ? WHERE id = ?", (1 if is_admin else 0, user_id))
+
+
+def upsert_user_from_oauth(db: sqlite3.Connection, provider: str, user_info: dict[str, object]) -> sqlite3.Row | None:
+    provider_sub = clean_string(user_info.get("sub"))
+    email = clean_string(user_info.get("email")).lower()
+    name = clean_string(user_info.get("name") or user_info.get("preferred_username") or email)
+    if not provider_sub or not email:
+        return None
+    now = datetime.now().isoformat(timespec="seconds")
+
+    with db:
+        account = db.execute(
+            """
+            SELECT u.*
+            FROM oauth_accounts oa
+            JOIN users u ON u.id = oa.user_id
+            WHERE oa.provider = ? AND oa.provider_sub = ?
+            """,
+            (provider, provider_sub),
+        ).fetchone()
+        if account:
+            db.execute(
+                """
+                UPDATE users
+                SET email = ?, name = ?, last_login_at = ?
+                WHERE id = ?
+                """,
+                (email, name, now, account["id"]),
+            )
+            db.execute(
+                """
+                UPDATE oauth_accounts
+                SET email = ?
+                WHERE provider = ? AND provider_sub = ?
+                """,
+                (email, provider, provider_sub),
+            )
+            return get_user_by_id(db, int(account["id"]))
+
+        existing = db.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        if existing:
+            user_id = int(existing["id"])
+            db.execute(
+                """
+                UPDATE users
+                SET name = ?, last_login_at = ?
+                WHERE id = ?
+                """,
+                (name, now, user_id),
+            )
+        else:
+            is_first_user = db.execute("SELECT 1 FROM users LIMIT 1").fetchone() is None
+            cursor = db.execute(
+                """
+                INSERT INTO users (email, name, is_admin, is_active, created_at, last_login_at)
+                VALUES (?, ?, ?, 1, ?, ?)
+                """,
+                (email, name, 1 if is_first_user else 0, now, now),
+            )
+            user_id = int(cursor.lastrowid)
+
+        db.execute(
+            """
+            INSERT OR IGNORE INTO oauth_accounts (user_id, provider, provider_sub, email)
+            VALUES (?, ?, ?, ?)
+            """,
+            (user_id, provider, provider_sub, email),
+        )
+        return get_user_by_id(db, user_id)
 
 
 def import_workbook(path: Path, db: sqlite3.Connection) -> None:
@@ -280,6 +605,46 @@ def get_command_by_id(db: sqlite3.Connection, command_id: int) -> sqlite3.Row | 
 
 def get_latest_import(db: sqlite3.Connection) -> sqlite3.Row | None:
     return db.execute("SELECT * FROM imports ORDER BY id DESC LIMIT 1").fetchone()
+
+
+def get_setting(db: sqlite3.Connection, key: str) -> str | None:
+    row = db.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+    if not row:
+        return None
+    return row["value"]
+
+
+def set_setting(db: sqlite3.Connection, key: str, value: str) -> None:
+    with db:
+        db.execute(
+            """
+            INSERT INTO app_settings (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (key, value),
+        )
+
+
+def resolve_default_command_id(db: sqlite3.Connection, commands: Iterable[sqlite3.Row]) -> int:
+    default_code = get_setting(db, "default_numeric_code")
+    if default_code:
+        command = db.execute(
+            """
+            SELECT id
+            FROM commands
+            WHERE numeric_code = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (default_code,),
+        ).fetchone()
+        if command:
+            return int(command["id"])
+    first_command = next(iter(commands), None)
+    if first_command:
+        return int(first_command["id"])
+    return 0
 
 
 def get_intervals_for_date(db: sqlite3.Connection, command_id: int, day: date) -> list[Interval]:

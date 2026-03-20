@@ -8,6 +8,12 @@ services:
     environment:
       HDO_DB_PATH: /app/data/hdo.sqlite3
       HDO_IMPORT_PATH: /import/aktualni-program-hdo-ke-stazeni.xls
+      HDO_SECRET_KEY: ${HDO_SECRET_KEY:-change-me}
+      HDO_AUTH_ENABLED: ${HDO_AUTH_ENABLED:-1}
+      HDO_OAUTH_GOOGLE_CLIENT_ID: ${HDO_OAUTH_GOOGLE_CLIENT_ID:-}
+      HDO_OAUTH_GOOGLE_CLIENT_SECRET: ${HDO_OAUTH_GOOGLE_CLIENT_SECRET:-}
+      HDO_OAUTH_APPLE_CLIENT_ID: ${HDO_OAUTH_APPLE_CLIENT_ID:-}
+      HDO_OAUTH_APPLE_CLIENT_SECRET: ${HDO_OAUTH_APPLE_CLIENT_SECRET:-}
     volumes:
       - ./data:/app/data
       - ./aktualni-program-hdo-ke-stazeni.xls:/import/aktualni-program-hdo-ke-stazeni.xls:ro

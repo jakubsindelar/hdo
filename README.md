@@ -79,6 +79,33 @@ Ochrana proti indexaci:
 - HTML obsahuje `meta robots`
 - `/robots.txt` zakazuje procházení celého webu
 
+## SSO a uživatelé
+
+Aplikace podporuje SSO přes OIDC (Google, Apple) a interní správu uživatelů.
+
+Základní proměnné:
+
+```dotenv
+HDO_SECRET_KEY=nahodne-dlouhe-tajne-heslo
+HDO_AUTH_ENABLED=1
+```
+
+Google:
+
+```dotenv
+HDO_OAUTH_GOOGLE_CLIENT_ID=...
+HDO_OAUTH_GOOGLE_CLIENT_SECRET=...
+```
+
+Apple:
+
+```dotenv
+HDO_OAUTH_APPLE_CLIENT_ID=...
+HDO_OAUTH_APPLE_CLIENT_SECRET=...
+```
+
+Po prvním úspěšném přihlášení vznikne uživatel v databázi. První uživatel je automaticky admin.
+
 Zastavení:
 
 ```bash
