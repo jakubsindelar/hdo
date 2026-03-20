@@ -88,6 +88,7 @@ Základní proměnné:
 ```dotenv
 HDO_SECRET_KEY=nahodne-dlouhe-tajne-heslo
 HDO_AUTH_ENABLED=1
+HDO_EXTERNAL_BASE_URL=https://hdo.example.com
 ```
 
 Google:
@@ -95,6 +96,12 @@ Google:
 ```dotenv
 HDO_OAUTH_GOOGLE_CLIENT_ID=...
 HDO_OAUTH_GOOGLE_CLIENT_SECRET=...
+```
+
+Do Google OAuth klienta dej callback:
+
+```text
+https://hdo.example.com/auth/google/callback
 ```
 
 Apple:

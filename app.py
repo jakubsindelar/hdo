@@ -15,6 +15,7 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for environments with
     OAuth = None
 import xlrd
 from flask import Flask, g, redirect, render_template, request, session, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -90,6 +91,8 @@ def create_app() -> Flask:
     app.config["SECRET_KEY"] = os.environ.get("HDO_SECRET_KEY", "dev-secret-change-me")
     app.config["AUTH_ENABLED"] = os.environ.get("HDO_AUTH_ENABLED", "1") != "0"
     app.config["AUTH_SESSION_KEY"] = "auth_user_id"
+    app.config["EXTERNAL_BASE_URL"] = os.environ.get("HDO_EXTERNAL_BASE_URL", "").rstrip("/")
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
     oauth = OAuth(app) if OAuth else None
     if oauth is None:
         app.config["AUTH_ENABLED"] = False
@@ -150,7 +153,8 @@ def create_app() -> Flask:
             return redirect(url_for("index"))
         if provider not in configured_providers:
             return redirect(url_for("login"))
-        redirect_uri = url_for("auth_callback", provider=provider, _external=True)
+        callback_path = url_for("auth_callback", provider=provider)
+        redirect_uri = build_external_url(app, callback_path)
         return oauth.create_client(provider).authorize_redirect(redirect_uri)
 
     @app.get("/auth/<provider>/callback")
@@ -396,6 +400,15 @@ def admin_required(app: Flask):
         return wrapped
 
     return decorator
+
+
+def build_external_url(app: Flask, path: str) -> str:
+    base = app.config.get("EXTERNAL_BASE_URL", "")
+    if not base:
+        return url_for("index", _external=True).rstrip("/") + path
+    if path.startswith("/"):
+        return f"{base}{path}"
+    return f"{base}/{path}"
 
 
 def get_user_by_id(db: sqlite3.Connection, user_id: int) -> sqlite3.Row | None:
