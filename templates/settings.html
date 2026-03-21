@@ -8,7 +8,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   </head>
   <body>
-    <main class="layout settings-layout">
+    <a href="#main-content" class="skip-link">Přeskočit na hlavní obsah</a>
+    <main class="layout settings-layout" id="main-content">
       <section class="topbar settings-topbar">
         <div class="topbar-heading">
           <div class="brand-block">
@@ -63,14 +64,21 @@
                 value="{{ selected_default_command.numeric_code ~ ((' (' ~ selected_default_command.readable_code ~ ')') if selected_default_command and selected_default_command.readable_code else '') if selected_default_command else '' }}"
                 placeholder="Číselný kód povelu"
                 autocomplete="off"
+                role="combobox"
                 aria-autocomplete="list"
+                aria-haspopup="listbox"
                 aria-controls="default-command-suggestions"
+                aria-expanded="false"
+                aria-activedescendant=""
+                aria-describedby="default-command-status default-command-error"
                 aria-label="Výchozí číselný kód povelu"
               >
               <span class="input-sizer" id="default-command-search-sizer" aria-hidden="true"></span>
-              <div class="autocomplete-panel settings-autocomplete-panel" id="default-command-suggestions" hidden></div>
+              <div class="autocomplete-panel settings-autocomplete-panel" id="default-command-suggestions" role="listbox" hidden></div>
             </div>
             <input type="hidden" id="default-command-id" name="command_id" value="{{ selected_default_command.id if selected_default_command else '' }}">
+            <p id="default-command-status" class="sr-only" aria-live="polite"></p>
+            <p id="default-command-error" class="form-error" role="alert" hidden>Vyberte prosím platný kód ze seznamu návrhů.</p>
             <button type="submit">Uložit výchozí kód</button>
           </form>
         {% else %}
@@ -127,11 +135,11 @@
             <table class="users-table">
               <thead>
                 <tr>
-                  <th>Email</th>
-                  <th>Jméno</th>
-                  <th>Role</th>
-                  <th>Stav</th>
-                  <th>Akce</th>
+                  <th scope="col">Email</th>
+                  <th scope="col">Jméno</th>
+                  <th scope="col">Role</th>
+                  <th scope="col">Stav</th>
+                  <th scope="col">Akce</th>
                 </tr>
               </thead>
               <tbody>
@@ -214,6 +222,8 @@
         const searchWrap = defaultCodeForm.querySelector(".search-input-wrap");
         const hiddenIdInput = document.getElementById("default-command-id");
         const suggestions = document.getElementById("default-command-suggestions");
+        const statusMessage = document.getElementById("default-command-status");
+        const errorMessage = document.getElementById("default-command-error");
         const options = [
           {% for item in commands %}
           {
@@ -222,6 +232,8 @@
           },
           {% endfor %}
         ];
+        let visibleSuggestions = [];
+        let activeIndex = -1;
 
         function syncSearchWidth() {
           const sample = searchInput.value || searchInput.placeholder || "";
@@ -246,31 +258,90 @@
           suggestions.style.maxWidth = `${Math.floor(maxWidth)}px`;
         }
 
+        function setExpanded(isExpanded) {
+          searchInput.setAttribute("aria-expanded", String(isExpanded));
+        }
+
+        function setActiveOption(index) {
+          const items = Array.from(suggestions.querySelectorAll("[role='option']"));
+          activeIndex = index;
+          items.forEach((item, currentIndex) => {
+            const isActive = currentIndex === activeIndex;
+            item.setAttribute("aria-selected", String(isActive));
+            item.classList.toggle("is-active", isActive);
+          });
+          if (activeIndex >= 0 && items[activeIndex]) {
+            searchInput.setAttribute("aria-activedescendant", items[activeIndex].id);
+          } else {
+            searchInput.setAttribute("aria-activedescendant", "");
+          }
+        }
+
+        function closeSuggestions() {
+          suggestions.hidden = true;
+          setExpanded(false);
+          setActiveOption(-1);
+        }
+
+        function clearValidationError() {
+          searchInput.removeAttribute("aria-invalid");
+          errorMessage.hidden = true;
+        }
+
+        function showValidationError() {
+          searchInput.setAttribute("aria-invalid", "true");
+          errorMessage.hidden = false;
+        }
+
+        function selectItem(item, shouldSubmit = false) {
+          searchInput.value = item.label;
+          hiddenIdInput.value = item.id;
+          clearValidationError();
+          closeSuggestions();
+          if (shouldSubmit) {
+            defaultCodeForm.requestSubmit();
+          }
+        }
+
         function renderSuggestions(items) {
           suggestions.innerHTML = "";
+          visibleSuggestions = items.slice(0, 12);
+          if (statusMessage) {
+            statusMessage.textContent = visibleSuggestions.length
+              ? `Nalezeno ${visibleSuggestions.length} návrhů`
+              : "Nebyly nalezeny žádné návrhy";
+          }
           if (!items.length) {
-            suggestions.hidden = true;
+            closeSuggestions();
             return;
           }
 
-          items.slice(0, 12).forEach((item) => {
-            const button = document.createElement("button");
-            button.type = "button";
-            button.className = "autocomplete-option";
-            button.textContent = item.label;
-            button.addEventListener("click", () => {
-              searchInput.value = item.label;
-              hiddenIdInput.value = item.id;
-              suggestions.hidden = true;
+          visibleSuggestions.forEach((item, index) => {
+            const option = document.createElement("div");
+            option.className = "autocomplete-option";
+            option.setAttribute("role", "option");
+            option.setAttribute("id", `default-command-option-${index}`);
+            option.setAttribute("aria-selected", "false");
+            option.textContent = item.label;
+            option.addEventListener("mousedown", (event) => {
+              event.preventDefault();
+              selectItem(item);
             });
-            suggestions.appendChild(button);
+            option.addEventListener("click", () => {
+              selectItem(item);
+            });
+            suggestions.appendChild(option);
           });
 
           suggestions.hidden = false;
+          setExpanded(true);
+          setActiveOption(-1);
         }
 
         function updateSuggestions() {
           syncSearchWidth();
+          hiddenIdInput.value = "";
+          clearValidationError();
           const term = searchInput.value.trim().toLowerCase();
           if (!term) {
             renderSuggestions(options.slice(0, 12));
@@ -287,13 +358,18 @@
             return false;
           }
           hiddenIdInput.value = match.id;
-          suggestions.hidden = true;
+          clearValidationError();
+          closeSuggestions();
           return true;
         }
 
         defaultCodeForm.addEventListener("submit", (event) => {
           if (!setExactMatch() && !hiddenIdInput.value) {
             event.preventDefault();
+            showValidationError();
+            if (statusMessage) {
+              statusMessage.textContent = "Nebyl vybrán platný kód povelu.";
+            }
           }
         });
         searchInput.addEventListener("focus", updateSuggestions);
@@ -301,19 +377,47 @@
         searchInput.addEventListener("change", setExactMatch);
         window.addEventListener("resize", syncSearchWidth);
         searchInput.addEventListener("keydown", (event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            if (suggestions.hidden) {
+              updateSuggestions();
+            }
+            if (!visibleSuggestions.length) {
+              return;
+            }
+            const nextIndex = activeIndex < visibleSuggestions.length - 1 ? activeIndex + 1 : 0;
+            setActiveOption(nextIndex);
+            return;
+          }
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            if (suggestions.hidden) {
+              updateSuggestions();
+            }
+            if (!visibleSuggestions.length) {
+              return;
+            }
+            const nextIndex = activeIndex > 0 ? activeIndex - 1 : visibleSuggestions.length - 1;
+            setActiveOption(nextIndex);
+            return;
+          }
           if (event.key === "Enter") {
             event.preventDefault();
+            if (!suggestions.hidden && activeIndex >= 0 && visibleSuggestions[activeIndex]) {
+              selectItem(visibleSuggestions[activeIndex], true);
+              return;
+            }
             setExactMatch();
             defaultCodeForm.requestSubmit();
           }
           if (event.key === "Escape") {
-            suggestions.hidden = true;
+            closeSuggestions();
           }
         });
 
         document.addEventListener("click", (event) => {
           if (!event.target.closest("#default-code-form")) {
-            suggestions.hidden = true;
+            closeSuggestions();
           }
         });
 

@@ -54,6 +54,23 @@
   border: 0;
 }
 
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 12px;
+  z-index: 1000;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  top: 12px;
+}
+
 body {
   margin: 0;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -358,6 +375,9 @@ input {
   background: var(--surface);
   color: var(--text);
   border: 1px solid transparent;
+  padding: 12px 14px;
+  border-radius: 12px;
+  cursor: pointer;
 }
 
 .autocomplete-option:hover,
@@ -365,6 +385,17 @@ input {
   background: color-mix(in srgb, var(--surface) 82%, var(--text) 18%);
   border-color: var(--line);
   outline: none;
+}
+
+.autocomplete-option.is-active {
+  background: color-mix(in srgb, var(--surface) 82%, var(--text) 18%);
+  border-color: var(--line);
+}
+
+.form-error {
+  margin: 0;
+  color: var(--red);
+  font-size: 0.92rem;
 }
 
 .settings-autocomplete-panel {
