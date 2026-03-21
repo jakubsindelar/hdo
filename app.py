@@ -242,25 +242,31 @@ def create_app() -> Flask:
         )
 
     @app.get("/settings")
-    @admin_required(app)
+    @login_required(app)
     def settings():
         db = get_db()
         commands = list_commands(db)
         import_meta = get_latest_import(db)
         default_code = get_setting(db, "default_numeric_code") or ""
+        selected_default_command = None
+        if commands:
+            selected_default_command = (
+                next((item for item in commands if item["numeric_code"] == default_code), None) or commands[0]
+            )
         users = list_users(db)
         return render_template(
             "settings.html",
             commands=commands,
             import_meta=import_meta,
             default_code=default_code,
+            selected_default_command=selected_default_command,
             import_path=str(DEFAULT_IMPORT_PATH),
             users=users,
             providers=[{"key": key, **provider} for key, provider in configured_providers.items()],
         )
 
     @app.get("/setting")
-    @admin_required(app)
+    @login_required(app)
     def settings_alias():
         return redirect(url_for("settings"))
 
@@ -275,7 +281,7 @@ def create_app() -> Flask:
         return redirect(url_for("index"))
 
     @app.post("/settings/default-code")
-    @admin_required(app)
+    @login_required(app)
     def update_default_code():
         command_id = request.form.get("command_id", type=int)
         db = get_db()

@@ -367,6 +367,10 @@ input {
   outline: none;
 }
 
+.settings-autocomplete-panel {
+  left: 0;
+}
+
 .settings-link {
   width: 46px;
   height: 46px;
@@ -527,6 +531,10 @@ button {
 }
 
 .settings-topbar-actions {
+  justify-self: end;
+}
+
+.topbar-actions {
   justify-self: end;
 }
 
@@ -693,6 +701,10 @@ button {
   }
 
   .settings-topbar-actions {
+    justify-self: start;
+  }
+
+  .topbar-actions {
     justify-self: start;
   }
 

@@ -23,38 +23,20 @@
             </div>
           {% endif %}
         </div>
-        <form method="get" class="selector autocomplete-form topbar-search">
-          <label for="command-search" class="sr-only">Číselný kód povelu</label>
-          <div class="search-controls">
-            <div class="search-input-wrap">
-              <input
-                type="text"
-                id="command-search"
-                value="{{ command.numeric_code ~ ((' (' ~ command.readable_code ~ ')') if command.readable_code else '') if request.args.get('command_id') else '' }}"
-                placeholder="Číselný kód povelu"
-                autocomplete="off"
-                aria-autocomplete="list"
-                aria-controls="command-suggestions"
-                aria-label="Číselný kód povelu"
-              >
-              <span class="input-sizer" id="command-search-sizer" aria-hidden="true"></span>
-            </div>
-            {% if (not auth_enabled) or (current_user and current_user.is_admin) %}
-              <a
-                href="{{ url_for('settings') }}"
-                class="settings-link"
-                aria-label="Otevřít nastavení"
-                title="Nastavení"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M19.14 12.94a7.3 7.3 0 0 0 .05-.94 7.3 7.3 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.65l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.14 7.14 0 0 0-1.62-.94L14.4 2.8a.5.5 0 0 0-.49-.4h-3.82a.5.5 0 0 0-.49.4L9.24 5.3c-.58.23-1.12.54-1.62.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.82a.5.5 0 0 0 .12.65l2.03 1.58a7.3 7.3 0 0 0-.05.94 7.3 7.3 0 0 0 .05.94L2.83 14.5a.5.5 0 0 0-.12.65l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.4 1.04.71 1.62.94l.36 2.5a.5.5 0 0 0 .49.4h3.82a.5.5 0 0 0 .49-.4l.36-2.5c.58-.23 1.12-.54 1.62-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.65zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/>
-                </svg>
-              </a>
-            {% endif %}
+        {% if (not auth_enabled) or current_user %}
+          <div class="topbar-actions">
+            <a
+              href="{{ url_for('settings') }}"
+              class="settings-link"
+              aria-label="Otevřít nastavení"
+              title="Nastavení"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M19.14 12.94a7.3 7.3 0 0 0 .05-.94 7.3 7.3 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.65l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.14 7.14 0 0 0-1.62-.94L14.4 2.8a.5.5 0 0 0-.49-.4h-3.82a.5.5 0 0 0-.49.4L9.24 5.3c-.58.23-1.12.54-1.62.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.82a.5.5 0 0 0 .12.65l2.03 1.58a7.3 7.3 0 0 0-.05.94 7.3 7.3 0 0 0 .05.94L2.83 14.5a.5.5 0 0 0-.12.65l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.4 1.04.71 1.62.94l.36 2.5a.5.5 0 0 0 .49.4h3.82a.5.5 0 0 0 .49-.4l.36-2.5c.58-.23 1.12-.54 1.62-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.65zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/>
+              </svg>
+            </a>
           </div>
-          <input type="hidden" name="command_id" id="command-id" value="{{ command.id }}">
-          <div class="autocomplete-panel" id="command-suggestions" hidden></div>
-        </form>
+        {% endif %}
       </section>
 
       <section class="hero">
@@ -134,112 +116,6 @@
       const storedTheme = parseTheme(localStorage.getItem(storageKey)) || parseTheme(localStorage.getItem("hdo-theme"));
       let themePreference = urlTheme || storedTheme || "light";
       renderTheme(themePreference);
-
-      const searchInput = document.getElementById("command-search");
-      const searchSizer = document.getElementById("command-search-sizer");
-      const searchWrap = document.querySelector(".search-input-wrap");
-      const hiddenIdInput = document.getElementById("command-id");
-      const suggestions = document.getElementById("command-suggestions");
-      const options = [
-        {% for item in commands %}
-        {
-          id: {{ item.id }},
-          label: {{ (item.numeric_code ~ ((' (' ~ item.readable_code ~ ')') if item.readable_code else ''))|tojson }}
-        },
-        {% endfor %}
-      ];
-
-      function syncSearchWidth() {
-        const sample = searchInput.value || searchInput.placeholder || "";
-        searchSizer.textContent = sample;
-        const isNarrow = window.innerWidth <= 820;
-        if (isNarrow) {
-          searchInput.style.width = "100%";
-          suggestions.style.width = "100%";
-          suggestions.style.maxWidth = "100%";
-          return;
-        }
-
-        const wrapWidth = searchWrap.getBoundingClientRect().width || 0;
-        const formRect = searchInput.form.getBoundingClientRect();
-        const viewportWidth = window.visualViewport?.width || window.innerWidth;
-        const viewportMax = Math.max(170, viewportWidth - formRect.left - 24);
-        const maxWidth = Math.max(170, Math.min(wrapWidth || formRect.width, formRect.width, viewportMax, 460));
-        const nextWidth = Math.min(Math.max(searchSizer.offsetWidth + 34, 170), maxWidth);
-
-        searchInput.style.width = `${Math.floor(nextWidth)}px`;
-        suggestions.style.width = `${Math.floor(nextWidth)}px`;
-        suggestions.style.maxWidth = `${Math.floor(maxWidth)}px`;
-      }
-
-      function renderSuggestions(items) {
-        suggestions.innerHTML = "";
-        if (!items.length) {
-          suggestions.hidden = true;
-          return;
-        }
-
-        items.slice(0, 12).forEach((item) => {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = "autocomplete-option";
-          button.textContent = item.label;
-          button.addEventListener("click", () => {
-            searchInput.value = item.label;
-            hiddenIdInput.value = item.id;
-            suggestions.hidden = true;
-            searchInput.form.requestSubmit();
-          });
-          suggestions.appendChild(button);
-        });
-
-        suggestions.hidden = false;
-      }
-
-      function updateSuggestions() {
-        syncSearchWidth();
-        const term = searchInput.value.trim().toLowerCase();
-        if (!term) {
-          renderSuggestions(options.slice(0, 12));
-          return;
-        }
-
-        const filtered = options.filter((item) => item.label.toLowerCase().includes(term));
-        renderSuggestions(filtered);
-      }
-
-      function submitExactMatch() {
-        const match = options.find((item) => item.label === searchInput.value);
-        if (!match) {
-          return false;
-        }
-        hiddenIdInput.value = match.id;
-        suggestions.hidden = true;
-        searchInput.form.requestSubmit();
-        return true;
-      }
-
-      searchInput.addEventListener("focus", updateSuggestions);
-      searchInput.addEventListener("input", updateSuggestions);
-      searchInput.addEventListener("change", submitExactMatch);
-      window.addEventListener("resize", syncSearchWidth);
-      searchInput.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          submitExactMatch();
-        }
-        if (event.key === "Escape") {
-          suggestions.hidden = true;
-        }
-      });
-
-      document.addEventListener("click", (event) => {
-        if (!event.target.closest(".autocomplete-form")) {
-          suggestions.hidden = true;
-        }
-      });
-
-      syncSearchWidth();
     </script>
   </body>
 </html>
